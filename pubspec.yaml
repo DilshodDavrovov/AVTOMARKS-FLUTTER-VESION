@@ -1,0 +1,21 @@
+name: venons_avtomarks
+description: "VENONS:AVTOMARKS - Массовое сканирование штрихкодов и QR кодов"
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  scandit_flutter_datacapture_barcode: 8.1.0
+  scandit_flutter_datacapture_core: 8.1.0
+  http: ^1.2.0
+  permission_handler: 12.0.1
+  shared_preferences: ^2.3.2
+
+flutter:
+  uses-material-design: true

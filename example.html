@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Scandit — Массовое чтение</title>
+
+  <!-- Polyfill для import maps (некоторым браузерам нужен) -->
+  <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
+  <!-- Scandit Web SDK через CDN -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@scandit/web-datacapture-core": "https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-core@7.3.0/build/js/index.js",
+      "@scandit/web-datacapture-core/": "https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-core@7.3.0/",
+      "@scandit/web-datacapture-barcode": "https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-barcode@7.3.0/build/js/index.js",
+      "@scandit/web-datacapture-barcode/": "https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-barcode@7.3.0/"
+    }
+  }
+  </script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, Arial, sans-serif; background:#0b0b0c; color:#111; }
+    .screen { display:none; min-height: 100%; }
+    .screen.active { display:block; }
+    .auth-wrap { min-height:100%; display:flex; flex-direction:column; justify-content:center; padding: 28px 20px; background: linear-gradient(180deg,#0b0b0c 0%, #121215 100%); color:#fff; }
+    .auth-card { background: #1b1c1f; border:1px solid #2a2b30; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+    .auth-title { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+    .auth-desc { font-size: 13px; color:#b6b7bb; margin-bottom: 16px; }
+    .field { display:flex; flex-direction:column; gap:6px; margin-bottom: 12px; }
+    .field label { color:#d7d8dc; font-size: 13px; }
+    .input { appearance:none; background:#0f1013; border:1px solid #2a2b30; color:#fff; border-radius: 12px; padding: 12px 14px; font-size: 16px; }
+    .primary { background: linear-gradient(180deg,#3b82f6,#2563eb); color:#fff; border:none; padding: 12px 16px; border-radius: 12px; font-size: 16px; font-weight:600; }
+    .primary:disabled { opacity:.6; }
+    .primary_red { background: linear-gradient(180deg,#ff0404,#f93e05); color:#fff; border:none; padding: 12px 16px; border-radius: 12px; font-size: 16px; font-weight:600; }
+    .muted { background: #26272b; color:#e5e7eb; border:1px solid #2f3136; padding: 10px 12px; border-radius: 10px; }
+    .toolbar { position: fixed; top: 12px; left: 12px; right: 12px; padding: 10px; display: flex; gap: 8px; align-items: center; z-index: 10; background: rgba(16,17,20,.6); backdrop-filter: blur(10px); border:1px solid #2a2b30; border-radius: 14px; }
+    .toolbar > * { margin-right: 6px; }
+    #app { position: fixed; inset: 0; background:#000; }
+    button { padding: 10px 14px; border-radius: 12px; border: 1px solid #2a2b30; background: #1b1c1f; color:#fff; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .pill { padding:6px 10px; border-radius: 999px; background:#0f1013; color:#d7d8dc; font-size: 13px; border:1px solid #2a2b30; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-top:1px solid #2a2b30; padding:10px; color:#e5e7eb; }
+    th { text-align: left; background:#0f1013; position: sticky; top:0; }
+    .flex-gap { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+    label { display:flex; align-items:center; gap:6px; }
+    .floating-actions { position: fixed; bottom: 12px; left: 12px; right: 12px; display:flex; gap:8px; z-index:10; }
+    .ghost { background: rgba(16,17,20,.6); border-color:#2a2b30; }
+    .danger { background: linear-gradient(180deg,#ef4444,#b91c1c); border:none; }
+    .success { background: linear-gradient(180deg,#22c55e,#16a34a); border:none; }
+    /* Modal */
+    .modal { position: fixed; inset:0; background: rgba(0,0,0,.55); display:none; align-items:flex-end; z-index: 20; }
+    .modal.active { display:flex; }
+    .sheet { width: 100%; max-height: 80vh; background:#0f1013; border-top-left-radius: 16px; border-top-right-radius: 16px; border:1px solid #2a2b30; box-shadow: 0 -10px 30px rgba(0,0,0,.4); display:flex; flex-direction:column; }
+    .sheet-header { padding: 12px; display:flex; align-items:center; justify-content: space-between; border-bottom:1px solid #2a2b30; }
+    .sheet-title { color:#fff; font-weight:600; font-size:16px; }
+    .sheet-body { overflow:auto; }
+    .badge { padding:4px 8px; border-radius:999px; background:#1b1c1f; border:1px solid #2a2b30; color:#d7d8dc; font-size:12px; }
+    .row-actions button { font-size:12px; padding:6px 8px; }
+  </style>
+</head>
+<body>
+  <!-- Экран авторизации -->
+  <div id="authScreen" class="screen active">
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <p class="auth-title" style="text-align: center; color: #4a6eff;">VENONS:AVROMARKS</p>
+        <p class="auth-title">Вход</p>
+        <p class="auth-desc">Введите логин и пароль для начала сборки.</p>
+        <div class="field">
+          <label for="loginUser">Логин</label>
+          <input id="loginUser" class="input" placeholder="user" autocomplete="username"/>
+        </div>
+        <div class="field">
+          <label for="loginPass">Пароль</label>
+          <input id="loginPass" class="input" type="password" placeholder="••••••••" autocomplete="current-password"/>
+        </div>
+        <button id="loginBtn" class="primary">Войти</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Основной экран -->
+  <div id="mainScreen" class="screen">
+    <!-- Верхняя панель управления -->
+    <div class="toolbar">
+      <button id="scanToggleBtn" class="primary">Start</button>
+      <span id="qrCounter" class="pill">QR: 0/100</span>
+      <span id="barCounter" class="pill">ШК: 0/1</span>
+      <span class="badge" id="flowHint">Сначала отсканируйте QR</span>
+    </div>
+
+    <!-- Видоискатель -->
+    <div id="app"></div>
+
+    <div class="floating-actions">
+      <button id="listBtn" class="ghost" style="flex:1">Список кодов</button>
+      <button id="clearBtn" class="ghost">Очистить</button>
+      <button id="saveBtn" class="success" disabled>Сохранить</button>
+    </div>
+  </div>
+
+  <!-- Модалка со списком -->
+  <div id="listModal" class="modal" aria-hidden="true">
+    <div class="sheet">
+      <div class="sheet-header">
+        <div class="sheet-title">Отсканированные коды</div>
+        <div class="flex-gap">
+          <span class="badge" id="totalBadge">0 шт.</span>
+          <button id="closeModal" class="ghost">Закрыть</button>
+        </div>
+      </div>
+      <div class="sheet-body">
+        <table>
+          <thead>
+            <tr><th>#</th><th></th><th>Данные</th></tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <script type="module">
+
+        import { configure, DataCaptureContext, DataCaptureView, Camera, FrameSourceState, PointWithUnit, MeasureUnit, NumberWithUnit, Anchor, Brush, Color} from "@scandit/web-datacapture-core";
+        import { barcodeCaptureLoader, BarcodeCapture, BarcodeCaptureSettings, Symbology, SymbologyDescription,BarcodeBatch,BarcodeBatchBasicOverlay} from "@scandit/web-datacapture-barcode";
+
+    try {
+
+        const appEl = document.getElementById("app");
+        const authScreen = document.getElementById("authScreen");
+        const mainScreen = document.getElementById("mainScreen");
+        const loginBtn = document.getElementById("loginBtn");
+        const loginUser = document.getElementById("loginUser");
+        const loginPass = document.getElementById("loginPass");
+        const scanToggleBtn = document.getElementById("scanToggleBtn");
+        const clearBtn = document.getElementById("clearBtn");
+        const saveBtn = document.getElementById("saveBtn");
+        const qrCounter  = document.getElementById("qrCounter");
+        const barCounter  = document.getElementById("barCounter");
+        const flowHint  = document.getElementById("flowHint");
+        const listBtn = document.getElementById("listBtn");
+        const listModal = document.getElementById("listModal");
+        const closeModal = document.getElementById("closeModal");
+        const totalBadge = document.getElementById("totalBadge");
+        const tbody    = document.getElementById("tbody");
+
+        const rows = [];
+        const qrCodes = new Set();
+        const recent = new Map();
+
+        const url = 'https://vaksina.pharmlux.uz/card_pay/hs/API';
+
+        let authHeader = "";
+        let itemBarcode = null;
+        let hasCount = false;
+        let oldMarksText = '';
+        let oldMarksUpdateTimestamp = '';
+        let countQr = 100;
+        let chekedCountQr = false;
+        let scanning = false;
+        let camera;
+        let barcodeBatch;
+        
+
+        async function addRow(data, name, ts) {
+            const idx = rows.length + 1;
+            rows.push({ idx, data, name, ts });
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${idx}</td><td class="row-actions"><button data-del="${encodeURIComponent(data)}" class="danger">Удалить</button></td><td>${escapeHtml(data)}</td>`;
+            tbody.prepend(tr);
+            totalBadge.textContent = `${rows.length} шт.`;
+        }
+
+        function resetList() {
+            rows.length = 0;
+            tbody.innerHTML = "";
+            // сброс локального анти-дубликатора
+            try { recent.clear(); } catch(_) {}
+            // сброс бизнес-счётчиков
+            qrCodes.clear();
+            itemBarcode = null;
+            updateCounters();
+            saveBtn.disabled = true;
+            totalBadge.textContent = `0 шт.`;
+            chekedCountQr = false;
+            countQr = 100;
+            updateCounters();
+        }
+
+        function removeRowByData(data) {
+            // удалить из rows (последнее вхождение)
+            const idx = rows.findIndex(r => r.data === data);
+            if (idx >= 0) {
+                const removed = rows.splice(idx, 1)[0];
+                // пересоберём таблицу
+                tbody.innerHTML = "";
+                let i = 1;
+                for (const r of rows) {
+                    r.idx = i++;
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `<td>${r.idx}</td><td class=\"row-actions\"><button data-del=\"${encodeURIComponent(r.data)}\" class=\"danger\">Удалить</button></td><td>${escapeHtml(r.data)}</td>`;
+                    tbody.appendChild(tr);
+                }
+                totalBadge.textContent = `${rows.length} шт.`;
+                // обновим бизнес-состояние и антидубликатор
+                recent.delete(data);
+                if (removed.name === Symbology.QR) {
+                    qrCodes.delete(data);
+                } else if (itemBarcode === data) {
+                    itemBarcode = null;
+                }
+                updateCounters();
+                saveBtn.disabled = !(qrCodes.size === countQr && itemBarcode);
+            }
+        }
+
+        function escapeHtml(s="") { return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+        async function initScandit(scandit_token) {
+            // Создаём View
+            const view = new DataCaptureView();
+            view.connectToElement(appEl);
+            view.showProgressBar();
+            view.setProgressBarMessage("Загрузка движка…");
+
+            await configure({
+                licenseKey: scandit_token,
+                libraryLocation: "https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-barcode@7.3.0/sdc-lib/",
+                moduleLoaders: [barcodeCaptureLoader()]
+            });
+
+            view.hideProgressBar();
+
+            
+
+            const context = await DataCaptureContext.create();
+
+
+            await view.setContext(context);
+
+            camera = Camera.default;
+            const cameraSettings = BarcodeBatch.recommendedCameraSettings;
+            await camera.applySettings(cameraSettings);
+            await context.setFrameSource(camera);
+
+            const settings = new BarcodeCaptureSettings();
+            settings.enableSymbologies([
+                Symbology.EAN13UPCA,
+                Symbology.EAN8,
+                Symbology.Code128,
+                Symbology.Code39,
+                Symbology.DataMatrix
+            ]);
+
+
+            
+
+            // Фильтр дублей на стороне SDK (в миллисекундах)
+            // Тот же код не будет выдаваться повторно в течение окна
+            settings.codeDuplicateFilter = 0;
+
+            barcodeBatch = await BarcodeBatch.forContext(context,settings);
+
+            
+            const overlay  = await BarcodeBatchBasicOverlay.withBarcodeBatchForView(
+                barcodeBatch,
+                view
+            );
+            
+
+            const redBrush =  new Brush();
+            redBrush.fill.color.hexadecimalString = "FF000073";
+            redBrush.stroke.color.hexadecimalString = "FF000073";
+            redBrush.stroke.width = 3;
+
+            overlay.listener = {
+            brushForTrackedBarcode: (overlay, trackedBarcode) => {
+                const data = trackedBarcode._barcode._data;
+                const sym = trackedBarcode._barcode._symbology;
+
+                if (oldMarksText.includes(data.slice(0, 31))
+                    || (sym === Symbology.DataMatrix ? data.length < 80 : data.length !== 20)
+                ) {
+                return redBrush;
+                }
+            },
+            };
+
+            const feedbackListener = {
+            didUpdateSession: (barcodeBatch, session) => {
+                if (session.addedTrackedBarcodes.length > 0) {
+                session.addedTrackedBarcodes.forEach(element => {
+                    const data = element._barcode._data;
+                    const sym = element._barcode._symbology;
+                    if (oldMarksText.includes(data.slice(0, 31))
+                        || (sym === Symbology.DataMatrix ? data.length < 80 : data.length !== 20)
+                    ) {
+                        return redBrush;
+                    }
+                    setCountQr(data.slice(3, 16)); 
+                    if (!flowAccepts(sym)) return;
+                    //beep();
+                    if (!isDuplicateNow(data)) {
+                    addRow(data, sym, Date.now());
+                    onAccepted(data, sym);   
+                    }
+                });
+                }
+            },
+            };
+
+            barcodeBatch.addListener(feedbackListener);
+            
+        }
+
+        function updateCounters() {
+            qrCounter.textContent = `QR: ${qrCodes.size}/${countQr}`;
+            barCounter.textContent = `ШК: ${itemBarcode ? 1 : 0}/1`;
+            if (qrCodes.size < countQr) {
+              flowHint.textContent = `Сначала отсканируйте ${countQr} QR`;
+            } else if (!itemBarcode) {
+              flowHint.textContent = "Теперь отсканируйте 1 штрихкод";
+            } else {
+              flowHint.textContent = "Готово к сохранению";
+            }
+        }
+
+        function flowAccepts(symbology) {
+            // Сначала набираем countQr QR, затем 1 линейный штрихкод (не QR)
+            if (qrCodes.size < countQr) {
+                return symbology === Symbology.DataMatrix;
+            }
+            if (!itemBarcode) {
+                return symbology !== Symbology.DataMatrix;
+            }
+            return false;
+        }
+
+        function onAccepted(data, symbology) {
+            if (qrCodes.size < countQr && symbology === Symbology.DataMatrix) {
+                qrCodes.add(data);
+            } else if (qrCodes.size >= countQr && !itemBarcode && symbology !== Symbology.DataMatrix) {
+                itemBarcode = data;
+            }
+            updateCounters();
+            if (qrCodes.size === countQr && itemBarcode) {
+                saveBtn.disabled = false;
+            }
+        }
+
+        function isDuplicateNow(data) {
+            const now = Date.now();
+            const last = recent.get(data) || 0;
+            if (last > 0) {
+                return true;
+            }
+            recent.set(data, now);
+            return false;
+        }
+
+        function beep() {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioCtx.createOscillator(); // генератор звука
+          const gainNode = audioCtx.createGain();        // громкость
+
+          oscillator.type = 'sine';      // тип волны: sine, square, sawtooth, triangle
+          oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // частота 440 Гц (нота "Ля")
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+
+          oscillator.start();
+          gainNode.gain.setValueAtTime(1, audioCtx.currentTime); // громкость = 1
+
+          // Остановить через 200 мс
+          oscillator.stop(audioCtx.currentTime + 0.05);
+        }
+
+        async function GetOldMarks() {
+          const res = await fetch(url+"/GetOldMarks?timestamp="+oldMarksUpdateTimestamp, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              ...(authHeader ? { "Authorization": authHeader } : {})  
+            }
+          });
+          if (!res.ok) {
+            alert(`Ошибка сервера ${res.status}: ${text}`);
+          }else{
+            const data = await res.json();
+            oldMarksText = oldMarksText + data.data;
+            oldMarksUpdateTimestamp = data.timestamp;
+          }
+        }
+
+        async function setCountQr(gtin) {
+          if ( chekedCountQr == true) {
+            return;
+          }
+          chekedCountQr = true;
+          const res = await fetch(url+"/GetCount?gtin="+gtin, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              ...(authHeader ? { "Authorization": authHeader } : {})  
+            }
+          });
+          if (!res.ok) {
+            alert(`Ошибка сервера ${res.status}: ${text}`);
+          }else{
+            const data = await res.json();
+            if (data.success) { 
+              countQr = data.data;
+              updateCounters();
+            }else{
+              alert(`Ошибка сервера ${res.status}: ${data.message}`);
+            }
+          }
+        }
+
+        async function saveToServer() {
+            if (qrCodes.size !== countQr || !itemBarcode) return;
+            const payload = {
+                boxId: `BOX-${new Date().toISOString()}`,
+                qrCodes: Array.from(qrCodes),
+                itemBarcode: itemBarcode,
+                countQr: qrCodes.size,
+                countBarcode: itemBarcode ? 1 : 0,
+                createdAt: new Date().toISOString()
+            };
+            try {
+                saveBtn.disabled = true;
+                const res = await fetch(url+"/CreateAgregate", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...(authHeader ? { "Authorization": authHeader } : {})
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    saveBtn.disabled = false;
+                    const text = await res.text().catch(() => "");
+                    alert(`Ошибка сервера ${res.status}: ${text}`);
+                }else{
+                  await GetOldMarks();
+                  chekedCountQr == false;
+                  resetList();
+                  alert("Сохранено");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Не удалось сохранить на сервер. См. консоль.");
+                // оставить кнопку активной для повтора
+                saveBtn.disabled = false;
+            }
+        }
+
+        async function setScanning(on) {
+          scanning = on;
+          scanToggleBtn.textContent = on ? "Stop" : "Start";
+          if (on) {
+            await camera.switchToDesiredState(FrameSourceState.On);
+            await barcodeBatch.setEnabled(true);
+          } else {
+            await barcodeBatch.setEnabled(false);
+            await camera.switchToDesiredState(FrameSourceState.Off);
+          }
+        }
+
+        
+        loginBtn.onclick = async () => {
+            const u = String(loginUser.value || "").trim();
+            const p = String(loginPass.value || "").trim();
+            if (!u || !p) { alert("Введите логин и пароль"); return; }
+            loginBtn.disabled = true;
+            try {
+                // authScreen.classList.remove("active");
+                // mainScreen.classList.add("active");
+
+                authHeader = "Basic " + btoa(`${u}:${p}`);
+                const response = await fetch(url+"/CheckAccess", {
+                  method: "GET",
+                  headers: {
+                    "Authorization": authHeader,
+                    "Content-Type": "application/json"
+                  }
+                });
+                if (!response.ok) {
+                  alert(`Ошибка: ${response.status}`);
+                }else{
+                    const response = await fetch(url+"/getScanditToken", {
+                        method: "GET",
+                        headers: {
+                            "Authorization": authHeader,
+                            "Content-Type": "application/json"
+                        }
+                    });
+                    if (!response.ok) {
+                        alert(`Ошибка: ${response.status}`);
+                    }else {
+                        const data = await response.json();
+                        await initScandit(data.data);
+                        await GetOldMarks();
+                        authScreen.classList.remove("active");
+                        mainScreen.classList.add("active");
+                    }
+                }
+            } finally {
+                loginBtn.disabled = false;
+            }
+        };
+
+        scanToggleBtn.onclick = async () => {
+          await setScanning(!scanning);
+        };
+
+        clearBtn.onclick = () => resetList();
+
+        saveBtn.onclick = () => saveToServer();
+
+        listBtn.onclick = () => { listModal.classList.add("active"); };
+
+        closeModal.onclick = () => { listModal.classList.remove("active"); };
+
+        listModal.addEventListener("click", (e) => { if (e.target === listModal) listModal.classList.remove("active"); });
+
+        tbody.addEventListener("click", (e) => {
+            const t = e.target;
+            if (t && t.getAttribute && t.getAttribute("data-del")) {
+                const data = decodeURIComponent(t.getAttribute("data-del"));
+                removeRowByData(data);
+            }
+        });
+
+    } catch (error) {
+        alert(error);   
+    }
+    
+  </script>
+</body>
+</html>
