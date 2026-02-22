@@ -418,10 +418,10 @@ class BarcodeArBloc extends Bloc implements BarcodeArListener, BarcodeArInfoAnno
     final bool invalid = data.isEmpty ? false : _isInvalid(data, sym);
 
     final brush = invalid
-        ? Brush(Colors.red.withOpacity(0.45), Colors.red.withOpacity(0.45), 3.0)
-        : Brush(Colors.white, Colors.white, 1.0);
+        ? Brush(const Color.fromARGB(115, 255, 67, 67), const Color.fromARGB(255, 255, 62, 62), 3.0)
+        : Brush(const Color.fromARGB(115, 0, 238, 255), const Color.fromARGB(255, 0, 225, 255), 3.0);
 
-    final highlight = BarcodeArCircleHighlight(barcode, BarcodeArCircleHighlightPreset.dot)..brush = brush;
+    final highlight = BarcodeArRectangleHighlight(barcode)..brush = brush;
     return highlight;
   }
 

@@ -1,4 +1,4 @@
-package com.scandit.flutter.matrixscanarsimplesample
+package pro.dori.pharmacies
 
 import io.flutter.embedding.android.FlutterActivity
 

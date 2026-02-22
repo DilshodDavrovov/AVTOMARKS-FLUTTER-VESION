@@ -14,7 +14,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "pro.dori.pharmacies"
     ndkVersion "27.0.12077973"
-    compileSdk 34
+    compileSdk 36
 
     kotlinOptions {
         jvmTarget = "17"
@@ -23,9 +23,10 @@ android {
     defaultConfig {
         applicationId "pro.dori.pharmacies"
         minSdk 24
-        targetSdk 34
+        targetSdk 36
         versionCode 1
         versionName "1.0"
+        multiDexEnabled true
     }
 
     signingConfigs {

@@ -466,6 +466,7 @@ class CaptureScreenState extends State<CaptureScreen>
     try {
       await bloc.saveToServer();
       if (!mounted) return;
+      setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Сохранено')),
       );
